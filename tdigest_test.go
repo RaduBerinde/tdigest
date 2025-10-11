@@ -609,7 +609,7 @@ func TestAccuracy(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
 	}
-	for _, delta := range []float64{100, 1000} {
+	for _, delta := range []int{100, 1000} {
 		t.Run(fmt.Sprintf("delta=%v", delta), func(t *testing.T) {
 			for valDistName, valDistFn := range testDistributions {
 				for valModName, valModFn := range testDistributionModifiers {

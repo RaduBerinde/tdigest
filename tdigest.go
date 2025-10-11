@@ -28,17 +28,25 @@ func New() *TDigest {
 }
 
 // NewWithCompression initializes a new distribution with custom compression.
-func NewWithCompression(c float64) *TDigest {
+//
+// delta is the compression factor, which determines the size of the digest: it
+// contains at most 2*delta centroids (but closer to 1.3*delta in practice).
+func NewWithCompression(delta int) *TDigest {
 	t := &TDigest{
-		Compression: c,
+		Compression:    float64(delta),
+		maxProcessed:   2 * delta,
+		maxUnprocessed: unprocessedFactor * 2 * delta,
 	}
-	t.maxProcessed = processedSize(0, t.Compression)
-	t.maxUnprocessed = unprocessedSize(0, t.Compression)
 	t.processed = make(CentroidList, 0, t.maxProcessed)
-	t.unprocessed = make(CentroidList, 0, t.maxUnprocessed+1)
+	t.unprocessed = make(CentroidList, 0, t.maxUnprocessed+t.maxProcessed+1)
 	t.Reset()
 	return t
 }
+
+// unprocessedFactor is the relative size of accumulated samples before a merge
+// and recompress step. The goal of this value is to balance the cost of the
+// sort against the cost of evaluating the scale function.
+const unprocessedFactor = 2
 
 // Calculate number of bytes needed for a tdigest of size c,
 // where c is the compression value
@@ -119,22 +127,32 @@ func (t *TDigest) process() {
 		t.processed.Len() > t.maxProcessed {
 
 		// Append all processed centroids to the unprocessed list and sort
+		n := len(t.unprocessed)
 		t.unprocessed = append(t.unprocessed, t.processed...)
-		pdqsort(t.unprocessed, 0, len(t.unprocessed), bits.Len(uint(len(t.unprocessed))))
+		//pdqsort(t.unprocessed, 0, len(t.unprocessed), bits.Len(uint(len(t.unprocessed))))
+		pdqsort(t.unprocessed, 0, n, bits.Len(uint(n)))
 
 		// Reset processed list with first centroid
 		t.processed.Clear()
-		t.processed = append(t.processed, t.unprocessed[0])
+
+		m := merger{a: t.unprocessed[n:], b: t.unprocessed[:n]}
+		centroid, _ := m.Next()
+		t.processed = append(t.processed, centroid)
 
 		t.processedWeight += t.unprocessedWeight
 		t.unprocessedWeight = 0
-		soFar := t.unprocessed[0].Weight
+		soFar := centroid.Weight
 		limit := t.processedWeight * t.integratedQ(1.0)
-		for _, centroid := range t.unprocessed[1:] {
+		for {
+			centroid, ok := m.Next()
+			if !ok {
+				break
+			}
+
 			projected := soFar + centroid.Weight
 			if projected <= limit {
 				soFar = projected
-				(&t.processed[t.processed.Len()-1]).Add(centroid)
+				t.processed[t.processed.Len()-1].Add(centroid)
 			} else {
 				k1 := t.integratedLocation(soFar / t.processedWeight)
 				limit = t.processedWeight * t.integratedQ(k1+1.0)
@@ -146,6 +164,25 @@ func (t *TDigest) process() {
 		t.max = math.Max(t.max, t.processed[t.processed.Len()-1].Mean)
 		t.unprocessed.Clear()
 	}
+}
+
+type merger struct {
+	a, b CentroidList
+}
+
+func (m *merger) Next() (Centroid, bool) {
+	if len(m.a) > 0 {
+		if len(m.b) == 0 || m.a[0].Mean <= m.b[0].Mean {
+			c := m.a[0]
+			m.a = m.a[1:]
+			return c, true
+		}
+	} else if len(m.b) == 0 {
+		return Centroid{}, false
+	}
+	c := m.b[0]
+	m.b = m.b[1:]
+	return c, true
 }
 
 // Centroids returns a copy of processed centroids.
@@ -293,18 +330,4 @@ func weightedAverage(x1, w1, x2, w2 float64) float64 {
 func weightedAverageSorted(x1, w1, x2, w2 float64) float64 {
 	x := (x1*w1 + x2*w2) / (w1 + w2)
 	return math.Max(x1, math.Min(x, x2))
-}
-
-func processedSize(size int, compression float64) int {
-	if size == 0 {
-		return int(2 * math.Ceil(compression))
-	}
-	return size
-}
-
-func unprocessedSize(size int, compression float64) int {
-	if size == 0 {
-		return int(8 * math.Ceil(compression))
-	}
-	return size
 }
