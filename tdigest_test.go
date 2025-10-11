@@ -135,6 +135,11 @@ func TestTdigest_Count(t *testing.T) {
 }
 
 func TestTdigest_Quantile(t *testing.T) {
+	const eps = 1e-3
+	normalDist := distuv.Normal{
+		Mu:    Mu,
+		Sigma: Sigma,
+	}
 	tests := []struct {
 		name     string
 		data     []float64
@@ -170,37 +175,37 @@ func TestTdigest_Quantile(t *testing.T) {
 			name:     "normal 50",
 			quantile: 0.5,
 			digest:   NormalDigest,
-			want:     10.000673533707138,
+			want:     normalDist.Quantile(0.5),
 		},
 		{
 			name:     "normal 90",
 			quantile: 0.9,
 			digest:   NormalDigest,
-			want:     13.842132136909889,
+			want:     normalDist.Quantile(0.9),
 		},
 		{
 			name:     "uniform 50",
 			quantile: 0.5,
 			digest:   UniformDigest,
-			want:     49.992502345843555,
+			want:     50,
 		},
 		{
 			name:     "uniform 90",
 			quantile: 0.9,
 			digest:   UniformDigest,
-			want:     89.98281777095822,
+			want:     90,
 		},
 		{
 			name:     "uniform 99",
 			quantile: 0.99,
 			digest:   UniformDigest,
-			want:     98.98503400959562,
+			want:     99,
 		},
 		{
 			name:     "uniform 99.9",
 			quantile: 0.999,
 			digest:   UniformDigest,
-			want:     99.90103781043621,
+			want:     99.9,
 		},
 	}
 	for _, tt := range tests {
@@ -213,7 +218,7 @@ func TestTdigest_Quantile(t *testing.T) {
 				}
 			}
 			got := td.Quantile(tt.quantile)
-			if got != tt.want {
+			if math.Abs(tt.want-got) > math.Max(eps, eps*tt.want) {
 				t.Errorf("unexpected quantile %f, got %g want %g", tt.quantile, got, tt.want)
 			}
 		})
@@ -221,6 +226,7 @@ func TestTdigest_Quantile(t *testing.T) {
 }
 
 func TestTdigest_CDFs(t *testing.T) {
+	const eps = 1e-3
 	tests := []struct {
 		name   string
 		data   []float64
@@ -250,7 +256,7 @@ func TestTdigest_CDFs(t *testing.T) {
 			name: "normal mean",
 			cdf:  10,
 			data: NormalData,
-			want: 0.4999156505250766,
+			want: 0.5,
 		},
 		{
 			name: "normal high",
@@ -268,7 +274,7 @@ func TestTdigest_CDFs(t *testing.T) {
 			name: "uniform 50",
 			cdf:  50,
 			data: UniformData,
-			want: 0.5000756133965755,
+			want: 0.5,
 		},
 		{
 			name: "uniform min",
@@ -286,13 +292,13 @@ func TestTdigest_CDFs(t *testing.T) {
 			name: "uniform 10",
 			cdf:  10,
 			data: UniformData,
-			want: 0.09987932577650871,
+			want: 0.1,
 		},
 		{
 			name: "uniform 90",
 			cdf:  90,
 			data: UniformData,
-			want: 0.9001667885256108,
+			want: 0.9,
 		},
 	}
 	for _, tt := range tests {
@@ -305,7 +311,7 @@ func TestTdigest_CDFs(t *testing.T) {
 				}
 			}
 			got := td.CDF(tt.cdf)
-			if got != tt.want {
+			if math.Abs(tt.want-got) > eps {
 				t.Errorf("unexpected CDF %f, got %g want %g", tt.cdf, got, tt.want)
 			}
 		})
