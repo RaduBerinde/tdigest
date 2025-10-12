@@ -1,6 +1,7 @@
 # tdigest
 
-This is an implementation of Ted Dunning's [t-digest](https://github.com/tdunning/t-digest/) in Go.
+This is a fork of github.com/influxdata/tdigest; it is an implementation of Ted
+Dunning's [t-digest](https://github.com/tdunning/t-digest/) in Go.
 
 The implementation is based off [Derrick Burns' C++ implementation](https://github.com/derrickburns/tdigest).
 
@@ -12,7 +13,7 @@ package main
 import (
 	"log"
 
-	"github.com/influxdata/tdigest"
+	"github.com/RaduBerinde/tdigest"
 )
 
 func main() {

@@ -1,11 +1,9 @@
 package main
 
 import (
+	"math/rand/v2"
 	"os"
 	"strconv"
-
-	"golang.org/x/exp/rand"
-	"gonum.org/v1/gonum/stat/distuv"
 )
 
 const (
@@ -18,18 +16,16 @@ const (
 
 func main() {
 	// Generate uniform and normal data
-	uniform := rand.New(rand.NewSource(seed))
-	dist := distuv.Normal{
-		Mu:    Mu,
-		Sigma: Sigma,
-		Src:   rand.New(rand.NewSource(seed)),
+	rng := rand.New(rand.NewPCG(seed, seed))
+	uniformData := make([]float64, N)
+	for i := range uniformData {
+		uniformData[i] = rng.Float64()
 	}
 
-	uniformData := make([]float64, N)
+	rng = rand.New(rand.NewPCG(seed, seed))
 	normalData := make([]float64, N)
 	for i := range normalData {
-		normalData[i] = dist.Rand()
-		uniformData[i] = uniform.Float64() * 100
+		normalData[i] = rng.NormFloat64()*Sigma + Mu
 	}
 
 	smallData := []float64{1, 2, 3, 4, 5, 5, 4, 3, 2, 1}

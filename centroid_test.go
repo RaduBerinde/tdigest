@@ -1,10 +1,10 @@
 package tdigest_test
 
 import (
+	"reflect"
 	"testing"
 
-	"github.com/google/go-cmp/cmp"
-	"github.com/influxdata/tdigest"
+	"github.com/RaduBerinde/tdigest"
 )
 
 func TestCentroid_Add(t *testing.T) {
@@ -63,8 +63,8 @@ func TestCentroid_Add(t *testing.T) {
 			} else if tt.wantErr && err.Error() != tt.errStr {
 				t.Errorf("Centroid.Add() error.Error() = %s, errStr %v", err.Error(), tt.errStr)
 			}
-			if !cmp.Equal(tt.c, tt.want) {
-				t.Errorf("unexprected centroid -want/+got\n%s", cmp.Diff(tt.want, tt.c))
+			if tt.c != tt.want {
+				t.Errorf("unexprected centroid want %f  got %f", tt.want, tt.c)
 			}
 		})
 	}
@@ -114,8 +114,8 @@ func TestNewCentroidList(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := tdigest.NewCentroidList(tt.centroids); !cmp.Equal(tt.want, got) {
-				t.Errorf("NewCentroidList() = -want/+got %s", cmp.Diff(tt.want, got))
+			if got := tdigest.NewCentroidList(tt.centroids); !reflect.DeepEqual(tt.want, got) {
+				t.Errorf("NewCentroidList() = want %v  got %v", tt.want, got)
 			}
 		})
 	}

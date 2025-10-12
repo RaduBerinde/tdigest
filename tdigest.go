@@ -205,11 +205,11 @@ func (t *TDigest) Quantile(q float64) float64 {
 		return t.min + 2.0*index/t.processed[0].Weight*(t.processed[0].Mean-t.min)
 	}
 
-	lower := sort.Search(len(t.cumulative), func(i int) bool {
+	lower := sort.Search(len(t.processed), func(i int) bool {
 		return t.cumulative[i] >= index
 	})
 
-	if lower+1 != len(t.cumulative) {
+	if lower < len(t.processed) {
 		z1 := index - t.cumulative[lower-1]
 		z2 := t.cumulative[lower] - index
 		return weightedAverage(t.processed[lower-1].Mean, z2, t.processed[lower].Mean, z1)

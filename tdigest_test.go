@@ -1,14 +1,16 @@
 package tdigest_test
 
 import (
+	"cmp"
 	"fmt"
 	"math"
+	"math/rand/v2"
 	"reflect"
+	"slices"
+	"sort"
 	"testing"
 
-	"github.com/influxdata/tdigest"
-	"golang.org/x/exp/rand"
-	"gonum.org/v1/gonum/stat/distuv"
+	"github.com/RaduBerinde/tdigest"
 )
 
 const (
@@ -27,25 +29,20 @@ var NormalDigest *tdigest.TDigest
 var UniformDigest *tdigest.TDigest
 
 func init() {
-	dist := distuv.Normal{
-		Mu:    Mu,
-		Sigma: Sigma,
-		Src:   rand.New(rand.NewSource(seed)),
-	}
-	uniform := rand.New(rand.NewSource(seed))
-
 	UniformData = make([]float64, N)
 	UniformDigest = tdigest.NewWithCompression(1000)
+	rng := rand.New(rand.NewPCG(seed, seed))
+	for i := range UniformData {
+		UniformData[i] = rng.Float64() * 100
+		UniformDigest.Add(UniformData[i], 1)
+	}
 
 	NormalData = make([]float64, N)
 	NormalDigest = tdigest.NewWithCompression(1000)
-
+	rng = rand.New(rand.NewPCG(seed, seed))
 	for i := range NormalData {
-		NormalData[i] = dist.Rand()
+		NormalData[i] = rng.NormFloat64()*Sigma + Mu
 		NormalDigest.Add(NormalData[i], 1)
-
-		UniformData[i] = uniform.Float64() * 100
-		UniformDigest.Add(UniformData[i], 1)
 	}
 }
 
@@ -136,10 +133,6 @@ func TestTdigest_Count(t *testing.T) {
 
 func TestTdigest_Quantile(t *testing.T) {
 	const eps = 1e-3
-	normalDist := distuv.Normal{
-		Mu:    Mu,
-		Sigma: Sigma,
-	}
 	tests := []struct {
 		name     string
 		data     []float64
@@ -175,13 +168,13 @@ func TestTdigest_Quantile(t *testing.T) {
 			name:     "normal 50",
 			quantile: 0.5,
 			digest:   NormalDigest,
-			want:     normalDist.Quantile(0.5),
+			want:     Mu,
 		},
 		{
 			name:     "normal 90",
 			quantile: 0.9,
 			digest:   NormalDigest,
-			want:     normalDist.Quantile(0.9),
+			want:     Mu + 1.281551565*Sigma,
 		},
 		{
 			name:     "uniform 50",
@@ -509,6 +502,195 @@ func TestTdigest_Centroids(t *testing.T) {
 			got = td.Centroids(got[:0])
 			if !reflect.DeepEqual(got, tt.want) {
 				t.Errorf("unexpected list got %g want %g", got, tt.want)
+			}
+		})
+	}
+}
+
+type sample struct {
+	Value  float64
+	Weight float64
+}
+
+func makeSamples(values, weights []float64) []sample {
+	s := make([]sample, len(values))
+	for i := range s {
+		s[i].Value = values[i]
+		if weights[i] <= 0 {
+			panic("weights must be positive")
+		}
+		s[i].Weight = weights[i]
+	}
+	return s
+}
+
+// expectedFns returns functions to compute the exact quantile and CDF for the
+// given samples.
+func expectedFns(
+	values []float64, weights []float64,
+) (quantileFn func(quantile float64) float64, cdfFn func(value float64) float64) {
+	samples := makeSamples(values, weights)
+	samples = slices.Clone(samples)
+	slices.SortFunc(samples, func(a, b sample) int {
+		return cmp.Compare(a.Value, b.Value)
+	})
+	cumulativeWeight := make([]float64, len(samples))
+	totalWeight := 0.0
+	for i := range samples {
+		totalWeight += samples[i].Weight
+		cumulativeWeight[i] = totalWeight
+	}
+	quantileFn = func(quantile float64) float64 {
+		w := totalWeight * quantile
+		idx := sort.SearchFloat64s(cumulativeWeight[:len(samples)-1], w)
+		// Invariant: cumulativeWeight[idx-1] < w <= cumulativeWeight[idx]. Choose
+		// the closer one.
+		if idx > 0 && w < (cumulativeWeight[idx-1]+cumulativeWeight[idx])*0.5 {
+			idx--
+		}
+		return samples[idx].Value
+	}
+	cdfFn = func(value float64) float64 {
+		idx := sort.Search(len(samples), func(i int) bool {
+			return samples[i].Value > value
+		})
+		if idx == len(samples) {
+			return 1.0
+		}
+		return cumulativeWeight[idx] / totalWeight
+	}
+	return quantileFn, cdfFn
+}
+
+var testDistributions = map[string]func(rng *rand.Rand) float64{
+	"constant": func(rng *rand.Rand) float64 {
+		return 42
+	},
+	"normal": func(rng *rand.Rand) float64 {
+		return rng.NormFloat64() + 10
+	},
+	"uniform": func(rng *rand.Rand) float64 {
+		return 100 * rng.Float64()
+	},
+	"exponential": func(rng *rand.Rand) float64 {
+		return rng.ExpFloat64() * 10
+	},
+	"bimodal": func(rng *rand.Rand) float64 {
+		if rng.IntN(2) == 0 {
+			return rng.NormFloat64() + 10
+		} else {
+			return rng.NormFloat64()*2 + 20
+		}
+	},
+}
+
+var testDistributionModifiers = map[string]func(rng *rand.Rand, values []float64){
+	"": func(rng *rand.Rand, values []float64) {},
+	"-mostly-sorted": func(rng *rand.Rand, values []float64) {
+		slices.Sort(values)
+		for range len(values) / 5 {
+			i := rng.IntN(len(values))
+			j := rng.IntN(len(values))
+			values[i], values[j] = values[j], values[i]
+		}
+	},
+	"-mostly-revsorted": func(rng *rand.Rand, values []float64) {
+		slices.Sort(values)
+		slices.Reverse(values)
+		for range len(values) / 5 {
+			i := rng.IntN(len(values))
+			j := rng.IntN(len(values))
+			values[i], values[j] = values[j], values[i]
+		}
+	},
+}
+
+func TestAccuracy(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping test in short mode")
+	}
+	for _, delta := range []float64{100, 1000} {
+		t.Run(fmt.Sprintf("delta=%v", delta), func(t *testing.T) {
+			for valDistName, valDistFn := range testDistributions {
+				for valModName, valModFn := range testDistributionModifiers {
+					if valDistName == "constant" && valModName != "" {
+						continue
+					}
+					t.Run(fmt.Sprintf("%s%s", valDistName, valModName), func(t *testing.T) {
+						for weightDistName, weightDistFn := range testDistributions {
+							for weightModName, weightModFn := range testDistributionModifiers {
+								if weightDistName == "constant" && weightModName != "" {
+									continue
+								}
+								t.Run(fmt.Sprintf("%s%s", weightDistName, weightModName), func(t *testing.T) {
+									for _, n := range []int{10_000, 1_000_000} {
+										t.Run(fmt.Sprintf("n=%d", n), func(t *testing.T) {
+											seed := rand.Uint64()
+											t.Logf("seed: %d", seed)
+											rng := rand.New(rand.NewPCG(seed, seed))
+											values := make([]float64, n)
+											weights := make([]float64, n)
+											for i := range values {
+												values[i] = valDistFn(rng)
+												weights[i] = max(1e-5, weightDistFn(rng))
+											}
+											valModFn(rng, values)
+											weightModFn(rng, weights)
+											trueQuantile, trueCDF := expectedFns(values, weights)
+
+											s := tdigest.NewWithCompression(delta)
+											for i := range values {
+												s.Add(values[i], weights[i])
+											}
+
+											var maxRankErr, maxRankErrTail float64
+											for p := range 101 {
+												q := float64(p) / 100.0
+
+												// Test Quantile accuracy.
+												x := s.Quantile(q)
+												if valDistName == "constant" {
+													if x != values[0] {
+														t.Fatalf("constant value disitibution, expected %v, got %v", values[0], x)
+													}
+													continue
+												}
+
+												xQuantile := trueCDF(x)
+												err := math.Abs(q - xQuantile)
+												maxRankErr = max(maxRankErr, err)
+												if p <= 10 || p >= 90 {
+													maxRankErrTail = max(maxRankErrTail, err)
+												}
+												const debug = false
+												if debug {
+													t.Logf("%3d%%: x=%.3f  xQuantile=%.2f%%   err=%.2f", p, x, xQuantile*100, err*100)
+												}
+
+												// Test CDF accuracy.
+												y := trueQuantile(q)
+												yQuantile := s.CDF(y)
+												err = math.Abs(q - yQuantile)
+												maxRankErr = max(maxRankErr, err)
+												if p <= 10 || p >= 90 {
+													maxRankErrTail = max(maxRankErrTail, err)
+												}
+												if debug {
+													t.Logf("%3d%%: y=%.3f  yQuantile=%.2f%%   err=%.2f", p, y, yQuantile*100, err*100)
+												}
+											}
+											t.Logf("max rank error: %.2f%%", maxRankErr*100)
+											t.Logf("max rank error for tail: %.2f%%", maxRankErrTail*100)
+											if maxRankErr > 2.0/float64(delta) {
+												t.Fatalf("rank error %.2f%% too high", maxRankErr*100)
+											}
+										})
+									}
+								})
+							}
+						}
+					})
+				}
 			}
 		})
 	}
