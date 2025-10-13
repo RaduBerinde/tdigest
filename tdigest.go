@@ -2,6 +2,7 @@ package tdigest
 
 import (
 	"math"
+	"math/bits"
 	"sort"
 )
 
@@ -119,7 +120,7 @@ func (t *TDigest) process() {
 
 		// Append all processed centroids to the unprocessed list and sort
 		t.unprocessed = append(t.unprocessed, t.processed...)
-		sort.Sort(&t.unprocessed)
+		pdqsort(t.unprocessed, 0, len(t.unprocessed), bits.Len(uint(len(t.unprocessed))))
 
 		// Reset processed list with first centroid
 		t.processed.Clear()
