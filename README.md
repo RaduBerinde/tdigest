@@ -1,6 +1,9 @@
-# tdigest
 
-This is a fork of github.com/influxdata/tdigest; it is an implementation of Ted
+[![Build Status](https://github.com/RaduBerinde/tdigest/actions/workflows/ci.yaml/badge.svg)](https://github.com/RaduBerinde/tdigest/actions/workflows/ci.yaml)
+[![Go Report Card](https://goreportcard.com/badge/github.com/RaduBerinde/tdigest)](https://goreportcard.com/report/github.com/RaduBerinde/tdigest)
+[![GoDoc](https://godoc.org/github.com/RaduBerinde/tdigest?status.svg)](https://godoc.org/github.com/RaduBerinde/tdigest)
+
+This is a fork of [influxdata/tdigest](http://github.com/influxdata/tdigest); it is an implementation of Ted
 Dunning's [t-digest](https://github.com/tdunning/t-digest/) in Go.
 
 The implementation is based off [Derrick Burns' C++ implementation](https://github.com/derrickburns/tdigest).
