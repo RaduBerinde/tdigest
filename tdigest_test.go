@@ -681,7 +681,15 @@ func TestAccuracy(t *testing.T) {
 											}
 											t.Logf("max rank error: %.2f%%", maxRankErr*100)
 											t.Logf("max rank error for tail: %.2f%%", maxRankErrTail*100)
-											if maxRankErr > 2.0/float64(delta) {
+											// Reasonable cutoffs for max rank error are 1% for n=100
+											// and 0.3% for n=1000. Note that in practice we usually
+											// see less than 0.1% for n=1000 but we sometimes seee
+											// errors around 0.2%.
+											cutoff := 0.01
+											if n == 1000 {
+												cutoff = 0.003
+											}
+											if maxRankErr > cutoff {
 												t.Fatalf("rank error %.2f%% too high", maxRankErr*100)
 											}
 										})
