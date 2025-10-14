@@ -26,6 +26,7 @@ jobs:
 
       - run: go test ./...
       - run: go vet ./...
+      - run: cd test; ./test.sh
 
   linux-32bit:
     strategy:
