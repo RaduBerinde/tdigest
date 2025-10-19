@@ -14,7 +14,7 @@ import (
 )
 
 const (
-	N     = 1e6
+	N     = 1_000_000
 	Mu    = 10
 	Sigma = 3
 
@@ -25,110 +25,39 @@ const (
 var NormalData []float64
 var UniformData []float64
 
-var NormalDigest *tdigest.TDigest
-var UniformDigest *tdigest.TDigest
+var NormalDigest tdigest.TDigest
+var UniformDigest tdigest.TDigest
 
 func init() {
 	UniformData = make([]float64, N)
-	UniformDigest = tdigest.NewWithCompression(1000)
+	bld := tdigest.MakeBuilder(1000)
 	rng := rand.New(rand.NewPCG(seed, seed))
 	for i := range UniformData {
 		UniformData[i] = rng.Float64() * 100
-		UniformDigest.Add(UniformData[i], 1)
+		bld.Add(UniformData[i], 1)
 	}
+	UniformDigest = bld.Digest()
 
+	bld = tdigest.MakeBuilder(1000)
 	NormalData = make([]float64, N)
-	NormalDigest = tdigest.NewWithCompression(1000)
 	rng = rand.New(rand.NewPCG(seed, seed))
 	for i := range NormalData {
 		NormalData[i] = rng.NormFloat64()*Sigma + Mu
-		NormalDigest.Add(NormalData[i], 1)
+		bld.Add(NormalData[i], 1)
 	}
+	NormalDigest = bld.Digest()
 }
 
 // Compares the quantile results of two digests, and fails if the
 // fractional err exceeds maxErr.
 // Always fails if the total count differs.
-func compareQuantiles(td1, td2 *tdigest.TDigest, maxErr float64) error {
-	if td1.Count() != td2.Count() {
-		return fmt.Errorf("counts are not equal, %d vs %d", int64(td1.Count()), int64(td2.Count()))
-	}
+func compareQuantiles(td1, td2 tdigest.TDigest, maxErr float64) error {
 	for q := 0.05; q < 1; q += 0.05 {
 		if math.Abs(td1.Quantile(q)-td2.Quantile(q))/td1.Quantile(q) > maxErr {
 			return fmt.Errorf("quantile %g differs, %g vs %g", q, td1.Quantile(q), td2.Quantile(q))
 		}
 	}
 	return nil
-}
-
-// All Add methods should yield equivalent results.
-func TestTdigest_AddFuncs(t *testing.T) {
-	centroids := NormalDigest.Centroids(nil)
-
-	addDigest := tdigest.NewWithCompression(100)
-	addCentroidDigest := tdigest.NewWithCompression(100)
-	addCentroidListDigest := tdigest.NewWithCompression(100)
-
-	for _, c := range centroids {
-		addDigest.Add(c.Mean, c.Weight)
-		addCentroidDigest.AddCentroid(c)
-	}
-	addCentroidListDigest.AddCentroidList(centroids)
-
-	if err := compareQuantiles(addDigest, addCentroidDigest, 0.01); err != nil {
-		t.Errorf("AddCentroid() differs from from Add(): %s", err.Error())
-	}
-	if err := compareQuantiles(addDigest, addCentroidListDigest, 0.01); err != nil {
-		t.Errorf("AddCentroidList() differs from from Add(): %s", err.Error())
-	}
-}
-
-func TestTdigest_Count(t *testing.T) {
-	tests := []struct {
-		name   string
-		data   []float64
-		digest *tdigest.TDigest
-		want   float64
-	}{
-		{
-			name: "empty",
-			data: []float64{},
-			want: 0,
-		},
-		{
-			name: "not empty",
-			data: []float64{5, 4},
-			want: 2,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			td := tt.digest
-			if td == nil {
-				td = tdigest.NewWithCompression(1000)
-				for _, x := range tt.data {
-					td.Add(x, 1)
-				}
-			}
-			got := td.Count()
-			if got != tt.want {
-				t.Errorf("unexpected count, got %g want %g", got, tt.want)
-			}
-		})
-	}
-
-	got := NormalDigest.Count()
-	want := float64(len(NormalData))
-	if got != want {
-		t.Errorf("unexpected count for NormalDigest, got %g want %g", got, want)
-	}
-
-	got = UniformDigest.Count()
-	want = float64(len(UniformData))
-	if got != want {
-		t.Errorf("unexpected count for UniformDigest, got %g want %g", got, want)
-	}
 }
 
 func TestTdigest_Quantile(t *testing.T) {
@@ -167,37 +96,37 @@ func TestTdigest_Quantile(t *testing.T) {
 		{
 			name:     "normal 50",
 			quantile: 0.5,
-			digest:   NormalDigest,
+			digest:   &NormalDigest,
 			want:     Mu,
 		},
 		{
 			name:     "normal 90",
 			quantile: 0.9,
-			digest:   NormalDigest,
+			digest:   &NormalDigest,
 			want:     Mu + 1.281551565*Sigma,
 		},
 		{
 			name:     "uniform 50",
 			quantile: 0.5,
-			digest:   UniformDigest,
+			digest:   &UniformDigest,
 			want:     50,
 		},
 		{
 			name:     "uniform 90",
 			quantile: 0.9,
-			digest:   UniformDigest,
+			digest:   &UniformDigest,
 			want:     90,
 		},
 		{
 			name:     "uniform 99",
 			quantile: 0.99,
-			digest:   UniformDigest,
+			digest:   &UniformDigest,
 			want:     99,
 		},
 		{
 			name:     "uniform 99.9",
 			quantile: 0.999,
-			digest:   UniformDigest,
+			digest:   &UniformDigest,
 			want:     99.9,
 		},
 	}
@@ -205,10 +134,12 @@ func TestTdigest_Quantile(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			td := tt.digest
 			if td == nil {
-				td = tdigest.NewWithCompression(1000)
+				bld := tdigest.MakeBuilder(1000)
 				for _, x := range tt.data {
-					td.Add(x, 1)
+					bld.Add(x, 1)
 				}
+				result := bld.Digest()
+				td = &result
 			}
 			got := td.Quantile(tt.quantile)
 			if math.Abs(tt.want-got) > math.Max(eps, eps*tt.want) {
@@ -221,11 +152,10 @@ func TestTdigest_Quantile(t *testing.T) {
 func TestTdigest_CDFs(t *testing.T) {
 	const eps = 1e-3
 	tests := []struct {
-		name   string
-		data   []float64
-		digest *tdigest.TDigest
-		cdf    float64
-		want   float64
+		name string
+		data []float64
+		cdf  float64
+		want float64
 	}{
 		{
 			name: "increasing",
@@ -296,13 +226,11 @@ func TestTdigest_CDFs(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			td := tt.digest
-			if td == nil {
-				td = tdigest.NewWithCompression(1000)
-				for _, x := range tt.data {
-					td.Add(x, 1)
-				}
+			bld := tdigest.MakeBuilder(1000)
+			for _, x := range tt.data {
+				bld.Add(x, 1)
 			}
+			td := bld.Digest()
 			got := td.CDF(tt.cdf)
 			if math.Abs(tt.want-got) > eps {
 				t.Errorf("unexpected CDF %f, got %g want %g", tt.cdf, got, tt.want)
@@ -311,36 +239,36 @@ func TestTdigest_CDFs(t *testing.T) {
 	}
 }
 
-func TestTdigest_Reset(t *testing.T) {
-	td := tdigest.New()
+func TestBuilder_Reset(t *testing.T) {
+	bld := tdigest.MakeBuilder(1000)
 	for _, x := range NormalData {
-		td.Add(x, 1)
+		bld.Add(x, 1)
 	}
+	td := bld.Digest()
 	q1 := td.Quantile(0.9)
 
-	td.Reset()
+	bld.Reset()
 	for _, x := range NormalData {
-		td.Add(x, 1)
+		bld.Add(x, 1)
 	}
+	td = bld.Digest()
 	if q2 := td.Quantile(0.9); q2 != q1 {
 		t.Errorf("unexpected quantile, got %g want %g", q2, q1)
 	}
 }
 
-func TestTdigest_OddInputs(t *testing.T) {
-	td := tdigest.New()
-	td.Add(math.NaN(), 1)
-	td.Add(1, math.NaN())
-	td.Add(1, 0)
-	td.Add(1, -1000)
-	if td.Count() != 0 {
-		t.Error("invalid value was alloed to be added")
-	}
+func TestBuilder_OddInputs(t *testing.T) {
+	bld := tdigest.MakeBuilder(1000)
+	bld.Add(math.NaN(), 1)
+	bld.Add(1, math.NaN())
+	bld.Add(1, 0)
+	bld.Add(1, -1000)
 
 	// Infinite values are allowed.
-	td.Add(1, 1)
-	td.Add(2, 1)
-	td.Add(math.Inf(1), 1)
+	bld.Add(1, 1)
+	bld.Add(2, 1)
+	bld.Add(math.Inf(1), 1)
+	td := bld.Digest()
 	if q := td.Quantile(0.5); q != 2 {
 		t.Errorf("expected median value 2, got %f", q)
 	}
@@ -349,33 +277,35 @@ func TestTdigest_OddInputs(t *testing.T) {
 	}
 }
 
-func TestTdigest_Merge(t *testing.T) {
+func TestMerger(t *testing.T) {
 	// Repeat merges enough times to ensure we call compress()
 	numRepeats := 20
-	addDigest := tdigest.New()
+	bld := tdigest.MakeBuilder(1000)
 	for i := 0; i < numRepeats; i++ {
-		for _, c := range NormalDigest.Centroids(nil) {
-			addDigest.AddCentroid(c)
+		for c := range NormalDigest.Centroids() {
+			bld.Add(c.Mean, c.Weight)
 		}
-		for _, c := range UniformDigest.Centroids(nil) {
-			addDigest.AddCentroid(c)
+		for c := range UniformDigest.Centroids() {
+			bld.Add(c.Mean, c.Weight)
 		}
 	}
 
-	mergeDigest := tdigest.New()
+	merger := tdigest.MakeMerger(1000)
 	for i := 0; i < numRepeats; i++ {
-		mergeDigest.Merge(NormalDigest)
-		mergeDigest.Merge(UniformDigest)
+		merger.Merge(&NormalDigest)
+		merger.Merge(&UniformDigest)
 	}
 
-	if err := compareQuantiles(addDigest, mergeDigest, 0.001); err != nil {
+	if err := compareQuantiles(bld.Digest(), merger.Digest(), 0.001); err != nil {
 		t.Errorf("AddCentroid() differs from from Merge(): %s", err.Error())
 	}
 
 	// Empty merge does nothing and has no effect on underlying centroids.
-	c1 := addDigest.Centroids(nil)
-	addDigest.Merge(tdigest.New())
-	c2 := addDigest.Centroids(nil)
+	td := merger.Digest()
+	c1 := slices.Collect(td.Centroids())
+	merger.Merge(&tdigest.TDigest{})
+	td = merger.Digest()
+	c2 := slices.Collect(td.Centroids())
 	if !reflect.DeepEqual(c1, c2) {
 		t.Error("Merging an empty digest altered data")
 	}
@@ -384,104 +314,63 @@ func TestTdigest_Merge(t *testing.T) {
 var quantiles = []float64{0.1, 0.5, 0.9, 0.99, 0.999}
 
 func BenchmarkTDigest_Add(b *testing.B) {
-	for n := 0; n < b.N; n++ {
-		td := tdigest.NewWithCompression(1000)
-		for _, x := range NormalData {
-			td.Add(x, 1)
-		}
-	}
-}
-
-func BenchmarkTDigest_AddCentroid(b *testing.B) {
-	centroids := make(tdigest.CentroidList, len(NormalData))
-	for i := range centroids {
-		centroids[i].Mean = NormalData[i]
-		centroids[i].Weight = 1
-	}
-
-	b.ResetTimer()
-	for n := 0; n < b.N; n++ {
-		td := tdigest.NewWithCompression(1000)
-		for i := range centroids {
-			td.AddCentroid(centroids[i])
-		}
-	}
-}
-
-func BenchmarkTDigest_AddCentroidList(b *testing.B) {
-	centroids := make(tdigest.CentroidList, len(NormalData))
-	for i := range centroids {
-		centroids[i].Mean = NormalData[i]
-		centroids[i].Weight = 1
-	}
-
-	b.ResetTimer()
-	for n := 0; n < b.N; n++ {
-		td := tdigest.NewWithCompression(1000)
-		td.AddCentroidList(centroids)
+	for _, delta := range []int{100, 1000} {
+		b.Run(fmt.Sprintf("delta=%d", delta), func(b *testing.B) {
+			for range b.N / len(NormalData) {
+				bld := tdigest.MakeBuilder(1000)
+				for _, x := range NormalData {
+					bld.Add(x, 1)
+				}
+				_ = bld.Digest()
+			}
+		})
 	}
 }
 
 func BenchmarkTDigest_Merge(b *testing.B) {
-	b.Run("AddCentroid", func(b *testing.B) {
-		var cl tdigest.CentroidList
-		td := tdigest.New()
-		for n := 0; n < b.N; n++ {
-			cl = NormalDigest.Centroids(cl[:0])
-			for i := range cl {
-				td.AddCentroid(cl[i])
-			}
-		}
-	})
 	b.Run("Merge", func(b *testing.B) {
-		td := tdigest.New()
+		merger := tdigest.MakeMerger(1000)
 		for n := 0; n < b.N; n++ {
-			td.Merge(NormalDigest)
+			merger.Merge(&NormalDigest)
 		}
 	})
 }
 
 func BenchmarkTDigest_Quantile(b *testing.B) {
-	td := tdigest.NewWithCompression(1000)
-	for _, x := range NormalData {
-		td.Add(x, 1)
-	}
-	b.ResetTimer()
 	var x float64
 	for n := 0; n < b.N; n++ {
 		for _, q := range quantiles {
-			x += td.Quantile(q)
+			x += NormalDigest.Quantile(q)
 		}
 	}
 }
 
 func TestTdigest_Centroids(t *testing.T) {
 	tests := []struct {
-		name   string
-		data   []float64
-		digest *tdigest.TDigest
-		want   tdigest.CentroidList
+		name string
+		data []float64
+		want []tdigest.Centroid
 	}{
 		{
 			name: "increasing",
 			data: []float64{1, 2, 3, 4, 5},
-			want: tdigest.CentroidList{
-				tdigest.Centroid{
+			want: []tdigest.Centroid{
+				{
 					Mean:   1.0,
 					Weight: 1.0,
 				},
 
-				tdigest.Centroid{
+				{
 					Mean:   2.5,
 					Weight: 2.0,
 				},
 
-				tdigest.Centroid{
+				{
 					Mean:   4.0,
 					Weight: 1.0,
 				},
 
-				tdigest.Centroid{
+				{
 					Mean:   5.0,
 					Weight: 1.0,
 				},
@@ -491,15 +380,13 @@ func TestTdigest_Centroids(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			var got tdigest.CentroidList
-			td := tt.digest
-			if td == nil {
-				td = tdigest.NewWithCompression(3)
-				for _, x := range tt.data {
-					td.Add(x, 1)
-				}
+			var got []tdigest.Centroid
+			bld := tdigest.MakeBuilder(3)
+			for _, x := range tt.data {
+				bld.Add(x, 1)
 			}
-			got = td.Centroids(got[:0])
+			td := bld.Digest()
+			got = slices.Collect(td.Centroids())
 			if !reflect.DeepEqual(got, tt.want) {
 				t.Errorf("unexpected list got %g want %g", got, tt.want)
 			}
@@ -611,18 +498,21 @@ func TestAccuracy(t *testing.T) {
 	}
 	for _, delta := range []int{100, 1000} {
 		t.Run(fmt.Sprintf("delta=%v", delta), func(t *testing.T) {
+			t.Parallel()
 			for valDistName, valDistFn := range testDistributions {
 				for valModName, valModFn := range testDistributionModifiers {
 					if valDistName == "constant" && valModName != "" {
 						continue
 					}
 					t.Run(fmt.Sprintf("%s%s", valDistName, valModName), func(t *testing.T) {
+						t.Parallel()
 						for weightDistName, weightDistFn := range testDistributions {
 							for weightModName, weightModFn := range testDistributionModifiers {
 								if weightDistName == "constant" && weightModName != "" {
 									continue
 								}
 								t.Run(fmt.Sprintf("%s%s", weightDistName, weightModName), func(t *testing.T) {
+									t.Parallel()
 									for _, n := range []int{10_000, 1_000_000} {
 										t.Run(fmt.Sprintf("n=%d", n), func(t *testing.T) {
 											seed := rand.Uint64()
@@ -638,17 +528,18 @@ func TestAccuracy(t *testing.T) {
 											weightModFn(rng, weights)
 											trueQuantile, trueCDF := expectedFns(values, weights)
 
-											s := tdigest.NewWithCompression(delta)
+											bld := tdigest.MakeBuilder(delta)
 											for i := range values {
-												s.Add(values[i], weights[i])
+												bld.Add(values[i], weights[i])
 											}
+											td := bld.Digest()
 
 											var maxRankErr, maxRankErrTail float64
 											for p := range 101 {
 												q := float64(p) / 100.0
 
 												// Test Quantile accuracy.
-												x := s.Quantile(q)
+												x := td.Quantile(q)
 												if valDistName == "constant" {
 													if x != values[0] {
 														t.Fatalf("constant value disitibution, expected %v, got %v", values[0], x)
@@ -669,7 +560,7 @@ func TestAccuracy(t *testing.T) {
 
 												// Test CDF accuracy.
 												y := trueQuantile(q)
-												yQuantile := s.CDF(y)
+												yQuantile := td.CDF(y)
 												err = math.Abs(q - yQuantile)
 												maxRankErr = max(maxRankErr, err)
 												if p <= 10 || p >= 90 {

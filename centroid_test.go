@@ -1,7 +1,6 @@
 package tdigest_test
 
 import (
-	"reflect"
 	"testing"
 
 	"github.com/RaduBerinde/tdigest"
@@ -65,57 +64,6 @@ func TestCentroid_Add(t *testing.T) {
 			}
 			if tt.c != tt.want {
 				t.Errorf("unexprected centroid want %f  got %f", tt.want, tt.c)
-			}
-		})
-	}
-}
-
-func TestNewCentroidList(t *testing.T) {
-	tests := []struct {
-		name      string
-		centroids []tdigest.Centroid
-		want      tdigest.CentroidList
-	}{
-		{
-			name: "empty list",
-		},
-		{
-			name: "priority should be by mean ascending",
-			centroids: []tdigest.Centroid{
-				{
-					Mean: 2.0,
-				},
-				{
-					Mean: 1.0,
-				},
-			},
-			want: tdigest.CentroidList{
-				{
-					Mean: 1.0,
-				},
-				{
-					Mean: 2.0,
-				},
-			},
-		},
-		{
-			name: "single element should be identity",
-			centroids: []tdigest.Centroid{
-				{
-					Mean: 1.0,
-				},
-			},
-			want: tdigest.CentroidList{
-				{
-					Mean: 1.0,
-				},
-			},
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := tdigest.NewCentroidList(tt.centroids); !reflect.DeepEqual(tt.want, got) {
-				t.Errorf("NewCentroidList() = want %v  got %v", tt.want, got)
 			}
 		})
 	}

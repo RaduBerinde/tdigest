@@ -5,13 +5,13 @@
 package tdigest
 
 // The code in this file is copied from Go's sort package. The only modification
-// is to use the CentroidList type directly. The inlining of Less and Swap
+// is to use the centroidList type directly. The inlining of Less and Swap
 // yields a ~20% improvement.
 
 import "math/bits"
 
 // insertionSort sorts data[a:b] using insertion sort.
-func insertionSort(data CentroidList, a, b int) {
+func insertionSort(data centroidList, a, b int) {
 	for i := a + 1; i < b; i++ {
 		for j := i; j > a && data.Less(j, j-1); j-- {
 			data.Swap(j, j-1)
@@ -21,7 +21,7 @@ func insertionSort(data CentroidList, a, b int) {
 
 // siftDown implements the heap property on data[lo:hi].
 // first is an offset into the array where the root of the heap lies.
-func siftDown(data CentroidList, lo, hi, first int) {
+func siftDown(data centroidList, lo, hi, first int) {
 	root := lo
 	for {
 		child := 2*root + 1
@@ -39,7 +39,7 @@ func siftDown(data CentroidList, lo, hi, first int) {
 	}
 }
 
-func heapSort(data CentroidList, a, b int) {
+func heapSort(data centroidList, a, b int) {
 	first := a
 	lo := 0
 	hi := b - a
@@ -62,7 +62,7 @@ func heapSort(data CentroidList, a, b int) {
 // C++ implementation: https://github.com/orlp/pdqsort
 // Rust implementation: https://docs.rs/pdqsort/latest/pdqsort/
 // limit is the number of allowed bad (very unbalanced) pivots before falling back to heapsort.
-func pdqsort(data CentroidList, a, b, limit int) {
+func pdqsort(data centroidList, a, b, limit int) {
 	const maxInsertion = 12
 
 	var (
@@ -136,7 +136,7 @@ func pdqsort(data CentroidList, a, b, limit int) {
 // Let p = data[pivot]
 // Moves elements in data[a:b] around, so that data[i]<p and data[j]>=p for i<newpivot and j>newpivot.
 // On return, data[newpivot] = p
-func partition(data CentroidList, a, b, pivot int) (newpivot int, alreadyPartitioned bool) {
+func partition(data centroidList, a, b, pivot int) (newpivot int, alreadyPartitioned bool) {
 	data.Swap(a, pivot)
 	i, j := a+1, b-1 // i and j are inclusive of the elements remaining to be partitioned
 
@@ -174,7 +174,7 @@ func partition(data CentroidList, a, b, pivot int) (newpivot int, alreadyPartiti
 
 // partitionEqual partitions data[a:b] into elements equal to data[pivot] followed by elements greater than data[pivot].
 // It assumed that data[a:b] does not contain elements smaller than the data[pivot].
-func partitionEqual(data CentroidList, a, b, pivot int) (newpivot int) {
+func partitionEqual(data centroidList, a, b, pivot int) (newpivot int) {
 	data.Swap(a, pivot)
 	i, j := a+1, b-1 // i and j are inclusive of the elements remaining to be partitioned
 
@@ -196,7 +196,7 @@ func partitionEqual(data CentroidList, a, b, pivot int) (newpivot int) {
 }
 
 // partialInsertionSort partially sorts a slice, returns true if the slice is sorted at the end.
-func partialInsertionSort(data CentroidList, a, b int) bool {
+func partialInsertionSort(data centroidList, a, b int) bool {
 	const (
 		maxSteps         = 5  // maximum number of adjacent out-of-order pairs that will get shifted
 		shortestShifting = 50 // don't shift any elements on short arrays
@@ -241,7 +241,7 @@ func partialInsertionSort(data CentroidList, a, b int) bool {
 
 // breakPatterns scatters some elements around in an attempt to break some patterns
 // that might cause imbalanced partitions in quicksort.
-func breakPatterns(data CentroidList, a, b int) {
+func breakPatterns(data centroidList, a, b int) {
 	length := b - a
 	if length >= 8 {
 		random := xorshift(length)
@@ -262,7 +262,7 @@ func breakPatterns(data CentroidList, a, b int) {
 // [0,8): chooses a static pivot.
 // [8,shortestNinther): uses the simple median-of-three method.
 // [shortestNinther,∞): uses the Tukey ninther method.
-func choosePivot(data CentroidList, a, b int) (pivot int, hint sortedHint) {
+func choosePivot(data centroidList, a, b int) (pivot int, hint sortedHint) {
 	const (
 		shortestNinther = 50
 		maxSwaps        = 4 * 3
@@ -299,7 +299,7 @@ func choosePivot(data CentroidList, a, b int) (pivot int, hint sortedHint) {
 }
 
 // order2 returns x,y where data[x] <= data[y], where x,y=a,b or x,y=b,a.
-func order2(data CentroidList, a, b int, swaps *int) (int, int) {
+func order2(data centroidList, a, b int, swaps *int) (int, int) {
 	if data.Less(b, a) {
 		*swaps++
 		return b, a
@@ -308,7 +308,7 @@ func order2(data CentroidList, a, b int, swaps *int) (int, int) {
 }
 
 // median returns x where data[x] is the median of data[a],data[b],data[c], where x is a, b, or c.
-func median(data CentroidList, a, b, c int, swaps *int) int {
+func median(data centroidList, a, b, c int, swaps *int) int {
 	a, b = order2(data, a, b, swaps)
 	b, c = order2(data, b, c, swaps)
 	a, b = order2(data, a, b, swaps)
@@ -316,11 +316,11 @@ func median(data CentroidList, a, b, c int, swaps *int) int {
 }
 
 // medianAdjacent finds the median of data[a - 1], data[a], data[a + 1] and stores the index into a.
-func medianAdjacent(data CentroidList, a int, swaps *int) int {
+func medianAdjacent(data centroidList, a int, swaps *int) int {
 	return median(data, a-1, a, a+1, swaps)
 }
 
-func reverseRange(data CentroidList, a, b int) {
+func reverseRange(data centroidList, a, b int) {
 	i := a
 	j := b - 1
 	for i < j {
@@ -330,13 +330,13 @@ func reverseRange(data CentroidList, a, b int) {
 	}
 }
 
-func swapRange(data CentroidList, a, b, n int) {
+func swapRange(data centroidList, a, b, n int) {
 	for i := 0; i < n; i++ {
 		data.Swap(a+i, b+i)
 	}
 }
 
-func stable(data CentroidList, n int) {
+func stable(data centroidList, n int) {
 	blockSize := 20 // must be > 0
 	a, b := 0, blockSize
 	for b <= n {
@@ -379,7 +379,7 @@ func stable(data CentroidList, n int) {
 // symMerge assumes non-degenerate arguments: a < m && m < b.
 // Having the caller check this condition eliminates many leaf recursion calls,
 // which improves performance.
-func symMerge(data CentroidList, a, m, b int) {
+func symMerge(data centroidList, a, m, b int) {
 	// Avoid unnecessary recursions of symMerge
 	// by direct insertion of data[a] into data[m:b]
 	// if data[a:m] only contains one element.
@@ -465,7 +465,7 @@ func symMerge(data CentroidList, a, m, b int) {
 // Data of the form 'x u v y' is changed to 'x v u y'.
 // rotate performs at most b-a many calls to data.Swap,
 // and it assumes non-degenerate arguments: a < m && m < b.
-func rotate(data CentroidList, a, m, b int) {
+func rotate(data centroidList, a, m, b int) {
 	i := m - a
 	j := b - m
 

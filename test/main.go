@@ -59,22 +59,22 @@ func loadData(name string) []float64 {
 	return data
 }
 
-func createTdigest(data []float64) *tdigest.TDigest {
-	td := tdigest.NewWithCompression(1000)
+func createTdigest(data []float64) tdigest.TDigest {
+	bld := tdigest.MakeBuilder(1000)
 	for _, x := range data {
-		td.Add(x, 1)
+		bld.Add(x, 1)
 	}
-	return td
+	return bld.Digest()
 }
 
-func computeQuantiles(td *tdigest.TDigest, quantiles []float64) (r []float64) {
+func computeQuantiles(td tdigest.TDigest, quantiles []float64) (r []float64) {
 	for _, q := range quantiles {
 		r = append(r, td.Quantile(q))
 	}
 	return
 }
 
-func computeCDFs(td *tdigest.TDigest, cdfs []float64) (r []float64) {
+func computeCDFs(td tdigest.TDigest, cdfs []float64) (r []float64) {
 	for _, x := range cdfs {
 		r = append(r, td.CDF(x))
 	}

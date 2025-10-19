@@ -1,9 +1,6 @@
 package tdigest
 
-import (
-	"fmt"
-	"sort"
-)
+import "fmt"
 
 // ErrWeightLessThanZero is used when the weight is not able to be processed.
 const ErrWeightLessThanZero = Error("centroid weight cannot be less than zero")
@@ -40,21 +37,13 @@ func (c *Centroid) Add(r Centroid) error {
 	return nil
 }
 
-// CentroidList is sorted by the Mean of the centroid, ascending.
-type CentroidList []Centroid
+// centroidList is sorted by the Mean of the centroid, ascending.
+type centroidList []Centroid
 
 // Clear clears the list.
-func (l *CentroidList) Clear() {
+func (l *centroidList) Clear() {
 	*l = (*l)[:0]
 }
 
-func (l CentroidList) Len() int           { return len(l) }
-func (l CentroidList) Less(i, j int) bool { return l[i].Mean < l[j].Mean }
-func (l CentroidList) Swap(i, j int)      { l[i], l[j] = l[j], l[i] }
-
-// NewCentroidList creates a priority queue for the centroids
-func NewCentroidList(centroids []Centroid) CentroidList {
-	l := CentroidList(centroids)
-	sort.Sort(l)
-	return l
-}
+func (l centroidList) Less(i, j int) bool { return l[i].Mean < l[j].Mean }
+func (l centroidList) Swap(i, j int)      { l[i], l[j] = l[j], l[i] }
