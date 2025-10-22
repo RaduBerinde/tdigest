@@ -163,7 +163,7 @@ class TDigest {
   }
 
   static inline Index unprocessedSize(Index size, Value compression) noexcept {
-    return (size == 0) ? static_cast<Index>(4 * std::ceil(compression)) : size;
+    return (size == 0) ? static_cast<Index>(4 * std::ceil(compression)-1) : size;
   }
 
   // merge in another t-digest
